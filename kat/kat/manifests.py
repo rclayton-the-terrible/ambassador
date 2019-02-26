@@ -122,6 +122,7 @@ rules:
   - services
   - secrets
   - namespaces
+  - endpoints
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: v1
@@ -156,6 +157,7 @@ rules:
   - services
   - secrets
   - namespaces
+  - endpoints
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: v1

@@ -143,46 +143,13 @@ class ResourceFetcher:
     def extract_k8s(self, obj: dict) -> None:
         self.logger.debug("extract_k8s obj %s" % json.dumps(obj, indent=4, sort_keys=True))
 
-        kind = obj.get('kind', None)
-
-        if kind != "Service":
-            self.logger.debug("%s: ignoring K8s %s object" % (self.location, kind))
+        object_kind = ObjectKind(obj=obj, filename=self.filename, logger=self.logger)
+        parsed, resource_identifier = object_kind.parse()
+        if parsed is None:
+            self.logger.debug("%s: ignoring K8s object, unsupported kind %s" % (self.location, object_kind.get_kind()))
             return
 
-        metadata = obj.get('metadata', None)
-
-        if not metadata:
-            self.logger.debug("%s: ignoring unannotated K8s %s" % (self.location, kind))
-            return
-
-        # Use metadata to build a unique resource identifier
-        resource_name = metadata.get('name')
-
-        # This should never happen as the name field is required in metadata for Service
-        if not resource_name:
-            self.logger.debug("%s: ignoring unnamed K8s %s" % (self.location, kind))
-            return
-
-        resource_namespace = metadata.get('namespace', 'default')
-
-        # This resource identifier is useful for log output since filenames can be duplicated (multiple subdirectories)
-        resource_identifier = '{name}.{namespace}'.format(namespace=resource_namespace, name=resource_name)
-
-        annotations = metadata.get('annotations', None)
-
-        if annotations:
-            annotations = annotations.get('getambassador.io/config', None)
-
-        # self.logger.debug("annotations %s" % annotations)
-
-        if not annotations:
-            # self.logger.debug("%s: ignoring K8s %s without Ambassador annotation" % (self.location, kind))
-            return
-
-        if self.filename and (not self.filename.endswith(":annotation")):
-            self.filename += ":annotation"
-
-        self.parse_yaml(annotations, filename=self.filename, rkey=resource_identifier)
+        self.parse_yaml(parsed, filename=self.filename, rkey=resource_identifier)
 
     def process_object(self, obj: dict, rkey: Optional[str]=None) -> None:
         if not isinstance(obj, dict):
@@ -238,3 +205,64 @@ class ResourceFetcher:
 
     def sorted(self, key=lambda x: x.rkey): # returns an iterator, probably
         return sorted(self.elements, key=key)
+
+
+class ObjectKind:
+    def __init__(self, obj, filename, logger: logging.Logger):
+        self.logger = logger
+        self.filename = filename
+        self.object = obj
+
+    def get_kind(self):
+        return self.object.get('kind', None)
+
+    def get_object_kind(self):
+        kind = self.get_kind()
+        if kind == "Service":
+            return ServiceKind(self.object, self.filename, self.logger)
+        else:
+            return None
+
+    def parse(self):
+        parsed = self.get_object_kind()
+        if parsed is None:
+            return None, ""
+        return parsed.parse()
+
+
+class ServiceKind(ObjectKind):
+    def parse(self):
+        metadata = self.object.get('metadata', None)
+
+        if not metadata:
+            self.logger.debug("ignoring unannotated K8s %s" % self.kind)
+            return None, ""
+
+        # Use metadata to build a unique resource identifier
+        resource_name = metadata.get('name')
+
+        # This should never happen as the name field is required in metadata for Service
+        if not resource_name:
+            self.logger.debug("ignoring unnamed K8s %s" % self.kind)
+            return None, ""
+
+        resource_namespace = metadata.get('namespace', 'default')
+
+        # This resource identifier is useful for log output since filenames can be duplicated (multiple subdirectories)
+        resource_identifier = '{name}.{namespace}'.format(namespace=resource_namespace, name=resource_name)
+
+        annotations = metadata.get('annotations', None)
+
+        if annotations:
+            annotations = annotations.get('getambassador.io/config', None)
+
+        # self.logger.debug("annotations %s" % annotations)
+
+        if not annotations:
+            # self.logger.debug("%s: ignoring K8s %s without Ambassador annotation" % (self.location, kind))
+            return None, ""
+
+        if self.filename and (not self.filename.endswith(":annotation")):
+            self.filename += ":annotation"
+
+        return annotations, resource_identifier
