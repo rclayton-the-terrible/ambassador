@@ -123,33 +123,35 @@ class ResourceFetcher:
 
         try:
             objects = list(yaml.safe_load_all(serialization))
-
-            self.push_location(filename, 1)
-
-            for obj in objects:
-                if k8s:
-                    self.extract_k8s(obj)
-                else:
-                    # if not obj:
-                    #     self.logger.debug("%s: empty object from %s" % (self.location, serialization))
-
-                    self.process_object(obj, rkey=rkey)
-                    self.ocount += 1
-
-            self.pop_location()
+            self.parse_object(objects=objects, k8s=k8s, rkey=rkey, filename=filename)
         except yaml.error.YAMLError as e:
             self.aconf.post_error("%s: could not parse YAML: %s" % (self.location, e))
+
+    def parse_object(self, objects, k8s=False, rkey: Optional[str]=None, filename: Optional[str]=None):
+        self.push_location(filename, 1)
+
+        for obj in objects:
+            if k8s:
+                self.extract_k8s(obj)
+            else:
+                # if not obj:
+                #     self.logger.debug("%s: empty object from %s" % (self.location, serialization))
+
+                self.process_object(obj, rkey=rkey)
+                self.ocount += 1
+
+        self.pop_location()
 
     def extract_k8s(self, obj: dict) -> None:
         self.logger.debug("extract_k8s obj %s" % json.dumps(obj, indent=4, sort_keys=True))
 
-        object_kind = ObjectKind(obj=obj, filename=self.filename, logger=self.logger)
-        parsed, resource_identifier = object_kind.parse()
+        k8s_object = ObjectKind(obj=obj, filename=self.filename, logger=self.logger)
+        parsed, resource_identifier = k8s_object.parse()
         if parsed is None:
-            self.logger.debug("%s: ignoring K8s object, unsupported kind %s" % (self.location, object_kind.get_kind()))
+            self.logger.debug("%s: ignoring K8s object, unsupported kind %s" % (self.location, k8s_object.get_kind()))
             return
 
-        self.parse_yaml(parsed, filename=self.filename, rkey=resource_identifier)
+        self.parse_object(parsed, filename=self.filename, rkey=resource_identifier)
 
     def process_object(self, obj: dict, rkey: Optional[str]=None) -> None:
         if not isinstance(obj, dict):
@@ -220,6 +222,8 @@ class ObjectKind:
         kind = self.get_kind()
         if kind == "Service":
             return ServiceKind(self.object, self.filename, self.logger)
+        elif kind == "Endpoints":
+            return EndpointsKind(self.object, self.filename, self.logger)
         else:
             return None
 
@@ -230,12 +234,72 @@ class ObjectKind:
         return parsed.parse()
 
 
+class EndpointsKind(ObjectKind):
+    def parse(self):
+        kind = self.get_kind()
+        metadata = self.object.get('metadata', None)
+        resource_name = metadata.get('name')
+        resource_namespace = metadata.get('namespace', 'default')
+
+        subsets = []
+        for subset in self.object.get('subsets', []):
+            addresses = []
+            for address in subset.get('addresses', []):
+                print("I am address", address)
+                add = {}
+
+                ip = address.get('ip', None)
+                if ip is not None:
+                    add['ip'] = ip
+
+                node = address.get('nodeName', None)
+                if node is not None:
+                    add['node'] = node
+
+                target_ref = address.get('targetRef', None)
+                if target_ref is not None:
+                    target_kind = target_ref.get('kind', None)
+                    if target_kind is not None:
+                        add['target_kind'] = target_kind
+
+                    target_name = target_ref.get('name', None)
+                    if target_name is not None:
+                        add['target_name'] = target_name
+
+                    target_namespace = target_ref.get('namespace', None)
+                    if target_namespace is not None:
+                        add['target_namespace'] = target_namespace
+
+                if len(add) > 0:
+                    addresses.append(add)
+
+            if len(addresses) == 0:
+                continue
+
+            ports = []
+            for port in subset.get('ports', []):
+                endpoint_port = port.get('port')
+                ports.append(endpoint_port)
+
+            subsets.append({
+                'addresses': addresses,
+                'ports': ports
+            })
+
+        if len(subsets) == 0:
+            return None, ""
+
+        resource_identifier = '{name}.{namespace}'.format(namespace=resource_namespace, name=resource_name)
+
+        return subsets, resource_identifier
+
 class ServiceKind(ObjectKind):
     def parse(self):
+        kind = self.get_kind()
         metadata = self.object.get('metadata', None)
 
         if not metadata:
-            self.logger.debug("ignoring unannotated K8s %s" % self.kind)
+            self.logger.debug("ignoring unannotated K8s %s" % kind)
             return None, ""
 
         # Use metadata to build a unique resource identifier
@@ -243,7 +307,7 @@ class ServiceKind(ObjectKind):
 
         # This should never happen as the name field is required in metadata for Service
         if not resource_name:
-            self.logger.debug("ignoring unnamed K8s %s" % self.kind)
+            self.logger.debug("ignoring unnamed K8s %s" % kind)
             return None, ""
 
         resource_namespace = metadata.get('namespace', 'default')
@@ -265,4 +329,10 @@ class ServiceKind(ObjectKind):
         if self.filename and (not self.filename.endswith(":annotation")):
             self.filename += ":annotation"
 
-        return annotations, resource_identifier
+        objects = []
+        try:
+            objects = list(yaml.safe_load_all(annotations))
+        except yaml.error.YAMLError as e:
+            self.logger.debug("could not parse YAML: %s" % e)
+
+        return objects, resource_identifier
