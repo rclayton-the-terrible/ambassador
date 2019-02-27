@@ -282,6 +282,8 @@ class EndpointsKind(ObjectKind):
                 ports.append(endpoint_port)
 
             subsets.append({
+                'kind': kind,
+                'name': resource_name,
                 'addresses': addresses,
                 'ports': ports
             })
