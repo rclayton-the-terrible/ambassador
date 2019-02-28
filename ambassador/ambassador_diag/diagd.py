@@ -606,7 +606,6 @@ class AmbassadorEventWatcher(threading.Thread):
     def _load_ir(self, aconf: Config, fetcher: ResourceFetcher,
                  secret_reader: Callable[['IRTLSContext', str, str], SavedSecret],
                  snapshot: str) -> None:
-        print("Sorted fetcher", fetcher.sorted())
         aconf.load_all(fetcher.sorted())
 
         aconf_path = os.path.join(app.snapshot_path, "aconf-tmp.json")

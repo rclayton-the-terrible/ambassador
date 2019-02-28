@@ -98,6 +98,8 @@ class IRCluster (IRResource):
         if marker:
             name_fields.append(marker)
 
+        self.logger = ir.logger
+
         # Toss in the original service before we mess with it, too.
         name_fields.append(service)
 
@@ -185,6 +187,8 @@ class IRCluster (IRResource):
         # TLS. Kind of odd, but there we go.)
         url = "tcp://%s:%d" % (hostname, port)
 
+        endpoint = self.get_endpoint(hostname, port, ir.endpoints)
+
         # OK. Build our default args.
         #
         # XXX We should really save the hostname and the port, not the URL.
@@ -201,6 +205,7 @@ class IRCluster (IRResource):
             "type": dns_type,
             "lb_type": lb_type,
             "urls": [ url ],
+            "endpoint": endpoint,
             "service": service,
             'enable_ipv4': enable_ipv4,
             'enable_ipv6': enable_ipv6
@@ -226,6 +231,24 @@ class IRCluster (IRResource):
 
         if ctx:
             ctx.referenced_by(self)
+
+    def get_endpoint(self, hostname, port, endpoints):
+        ip = []
+        ports = []
+        if hostname in endpoints:
+            for address in endpoints[hostname]['addresses']:
+                ip.append(address['ip'])
+
+            for port in endpoints[hostname]['ports']:
+                ports.append(port)
+
+            return {
+                'ip': ip,
+                'ports': ports
+            }
+
+        self.logger.debug("no endpoint found for hostname {}".format(hostname))
+        return {}
 
     def add_url(self, url: str) -> List[str]:
         self.urls.append(url)

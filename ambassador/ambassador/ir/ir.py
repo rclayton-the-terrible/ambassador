@@ -129,6 +129,7 @@ class IR:
         # Save breaker & outlier configs.
         self.breakers = aconf.get_config("CircuitBreaker") or {}
         self.outliers = aconf.get_config("OutlierDetection") or {}
+        self.endpoints = aconf.get_config("endpoints") or {}
 
         # Save tracing and ratelimit settings.
         self.tracing = typecast(IRTracing, self.save_resource(IRTracing(self, aconf)))

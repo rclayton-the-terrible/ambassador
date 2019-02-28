@@ -73,15 +73,26 @@ class V2Cluster(dict):
 
     def get_endpoints(self, cluster: IRCluster):
         result = []
-        for u in cluster.urls:
-            p = urllib.parse.urlparse(u)
-            address = {
-                'address': p.hostname,
-                'port_value': int(p.port)
-            }
-            if p.scheme:
-                address['protocol'] = p.scheme.upper()
-            result.append({'endpoint': {'address': {'socket_address': address}}})
+
+        endpoint = cluster.endpoint
+        if len(endpoint) > 0:
+            for ip in endpoint['ip']:
+                for port in endpoint['ports']:
+                    address = {
+                        'address': ip,
+                        'port_value': port
+                    }
+                    result.append({'endpoint': {'address': {'socket_address': address}}})
+        else:
+            for u in cluster.urls:
+                p = urllib.parse.urlparse(u)
+                address = {
+                    'address': p.hostname,
+                    'port_value': int(p.port)
+                }
+                if p.scheme:
+                    address['protocol'] = p.scheme.upper()
+                result.append({'endpoint': {'address': {'socket_address': address}}})
         return result
 
     @classmethod

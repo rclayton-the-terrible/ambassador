@@ -245,7 +245,6 @@ class EndpointsKind(ObjectKind):
         for subset in self.object.get('subsets', []):
             addresses = []
             for address in subset.get('addresses', []):
-                print("I am address", address)
                 add = {}
 
                 ip = address.get('ip', None)
